@@ -1,10 +1,13 @@
+import tensorflow as tf
+from tensorflow.keras.callbacks import Callback
 import numpy as np
 import warnings
 from tensorflow.keras.layers import BatchNormalization
 from tensorflow.keras.callbacks import EarlyStopping, Callback
 from tensorflow.keras import backend as K
 
-# For augmentation
+
+# Preprocessing Func.
 def get_random_eraser(p=0.5, s_l=0.02, s_h=0.4, r_1=0.3, r_2=1/0.3, v_l=0, v_h=255, pixel_level=False):
     def eraser(input_img):
         img_h, img_w, img_c = input_img.shape
@@ -34,203 +37,157 @@ def get_random_eraser(p=0.5, s_l=0.02, s_h=0.4, r_1=0.3, r_2=1/0.3, v_l=0, v_h=2
         return input_img
 
 
-class SWA(Callback):
-    """ Stochastic Weight Averging.
-    # Paper
-        title: Averaging Weights Leads to Wider Optima and Better Generalization
-        link: https://arxiv.org/abs/1803.05407
-    # Arguments
-        start_epoch:   integer, epoch when swa should start.
-        lr_schedule:   string, type of learning rate schedule.
-        swa_lr:        float, learning rate for swa sampling.
-        swa_lr2:       float, upper bound of cyclic learning rate.
-        swa_freq:      integer, length of learning rate cycle.
-        verbose:       integer, verbosity mode, 0 or 1.
-    """
-    def __init__(self, 
-                 start_epoch, 
-                 lr_schedule='manual', 
-                 swa_lr=0.001, 
-                 swa_lr2=0.003,
-                 swa_freq=1,
-                 verbose=0):
-        
-        super(SWA, self).__init__()
-        self.start_epoch = start_epoch - 1
-        self.lr_schedule = lr_schedule
-        self.swa_lr = swa_lr
-        self.swa_lr2 = swa_lr2
-        self.swa_freq = swa_freq
-        self.verbose = verbose
-        
-        if start_epoch < 2:
-            raise ValueError('"swa_start" attribute cannot be lower than 2.')
-            
-        schedules = ['manual', 'constant', 'cyclic']
-        
-        if self.lr_schedule not in schedules:
-            raise ValueError('"{}" is not a valid learning rate schedule' \
-                             .format(self.lr_schedule))
+class SWA(tf.keras.optimizers.Optimizer):
+    ''''Stochastic Weight Averaging''''
 
-        if self.lr_schedule == 'cyclic' and self.swa_freq < 2:
-            raise ValueError('"swa_freq" must be higher than 1 for cyclic schedule.')
+    def __init__(self,
+                 optimizer,
+                 start_averaging=0,
+                 average_period=10,
+                 name='SWA',
+                 **kwargs):
 
-        if self.lr_schedule == 'cyclic' and self.swa_lr > self.swa_lr2:
-            raise ValueError('"swa_lr" must be lower than "swa_lr2".')
+        super(SWA, self).__init__(name, **kwargs)
 
-    def on_train_begin(self, logs=None):
-        
-        self.epochs = self.params.get('epochs')
-        
-        if self.start_epoch >= self.epochs - 1:
-            raise ValueError('"swa_start" attribute must be lower than "epochs".')
+        if isinstance(optimizer, str):
+            optimizer = tf.keras.optimizers.get(optimizer)
+        if not isinstance(optimizer, tf.keras.optimizers.Optimizer):
+            raise TypeError(
+                'optimizer is not an object of tf.keras.optimizers.Optimizer')
+        if average_period < 1:
+            raise ValueError('average_period must be >= 1')
+        if start_averaging < 0:
+            raise ValueError('start_averaging must be >= 0')
 
-        self.init_lr = K.get_value(self.model.optimizer.lr)
+        self._optimizer = optimizer
+        self._set_hyper('average_period', average_period)
+        self._set_hyper('start_averaging', start_averaging)
+        self._initialized = False
 
-        if self.init_lr < self.swa_lr:
-            raise ValueError('"swa_lr" must be lower than rate set in optimizer.')
-            
-        self._check_batch_norm()
+    def _create_slots(self, var_list):
+        self._optimizer._create_slots(
+            var_list=var_list)  # pylint: disable=protected-access
+        for var in var_list:
+            self.add_slot(var, 'average')
 
-    def on_epoch_begin(self, epoch, logs=None):
-        
-        self._scheduler(epoch)        
-        self._update_lr(epoch)       
+    def _create_hypers(self):
+        self._optimizer._create_hypers()  # pylint: disable=protected-access
 
-        if self.is_swa_start_epoch:
-            self.swa_weights = self.model.get_weights()
-            
-            if self.verbose > 0:
-                print('\nEpoch %05d: starting stochastic weight averaging'
-                      % (epoch + 1))
-                
-        if self.is_batch_norm_epoch:
-            self._set_swa_weights(epoch)
-            self._reset_batch_norm()
-            
-            if self.verbose > 0:
-                print('\nEpoch %05d: running forward pass to adjust batch normalization'
-                      % (epoch + 1))
+    def _prepare(self, var_list):
+        return self._optimizer._prepare(var_list=var_list)  # pylint: disable=protected-access
 
-    def on_batch_begin(self, batch, logs=None):
-        
-        if self.is_batch_norm_epoch:
-            
-            batch_size = self.params['samples']      
-            momentum = batch_size / (batch*batch_size + batch_size)
+    def apply_gradients(self, grads_and_vars, name=None):
+        self._optimizer._iterations = self.iterations  # pylint: disable=protected-access
+        return super(SWA, self).apply_gradients(grads_and_vars, name)
 
-            for layer in self.batch_norm_layers:
-                layer.momentum = momentum
-                
-    def on_epoch_end(self, epoch, logs=None):
+    def _average_op(self, var):
+        average_var = self.get_slot(var, 'average')
+        average_period = self._get_hyper('average_period', tf.dtypes.int64)
+        start_averaging = self._get_hyper('start_averaging', tf.dtypes.int64)
+        # check if the correct number of iterations has taken place to start
+        # averaging.
+        thresold_cond = tf.greater_equal(self.iterations, start_averaging)
+        # number of times snapshots of weights have been taken (using max to
+        # avoid negative values of num_snapshots).
+        num_snapshots = tf.math.maximum(
+            tf.cast(0, tf.int64),
+            tf.math.floordiv(self.iterations - start_averaging,
+                             average_period))
+        # checks if the iteration is one in which a snapshot should be taken.
+        sync_cond = tf.equal(start_averaging + num_snapshots * average_period,
+                             self.iterations)
+        num_snapshots = tf.cast(num_snapshots, tf.float32)
+        average_value = (
+            (average_var * num_snapshots + var) / (num_snapshots + 1.))
+        average_cond = tf.reduce_all([thresold_cond, sync_cond])
+        with tf.control_dependencies([average_value]):
+            average_update = average_var.assign(
+                tf.where(
+                    average_cond,
+                    average_value,
+                    average_var,
+                ),
+                use_locking=self._use_locking)
+        return average_update
 
-        if self.is_swa_start_epoch:
-            self.swa_start_epoch = epoch
-        
-        if self.is_swa_epoch and not self.is_batch_norm_epoch:
-            self.swa_weights = self._average_weights(epoch)
+    @property
+    def weights(self):
+        return self._weights + self._optimizer.weights
 
-    def on_train_end(self, logs=None):
-        
-        if not self.has_batch_norm:
-            self._set_swa_weights(self.epochs)
-        else:
-            self._restore_batch_norm()
-    
-    def _scheduler(self, epoch):
-        
-        swa_epoch = (epoch - self.start_epoch)
-        
-        self.is_swa_epoch = epoch >= self.start_epoch and swa_epoch % self.swa_freq == 0
-        self.is_swa_start_epoch = epoch == self.start_epoch
-        self.is_batch_norm_epoch = epoch == self.epochs - 1 and self.has_batch_norm
-    
-    def _average_weights(self, epoch):
+    def _resource_apply_dense(self, grad, var):
+        train_op = self._optimizer._resource_apply_dense(
+            grad, var)  # pylint: disable=protected-access
+        with tf.control_dependencies([train_op]):
+            average_op = self._average_op(var)
+        return tf.group(train_op, average_op)
 
-        return [(swa_w * (epoch - self.start_epoch) + w)
-                / ((epoch - self.start_epoch) + 1)
-                    for swa_w, w in zip(self.swa_weights, self.model.get_weights())]
+    def _resource_apply_sparse(self, grad, var, indices):
+        train_op = self._optimizer._resource_apply_sparse(  # pylint: disable=protected-access
+            grad, var, indices)
+        with tf.control_dependencies([train_op]):
+            average_op = self._average_op(var)
+        return tf.group(train_op, average_op)
 
-    def _update_lr(self, epoch):  
-        
-        if self.is_batch_norm_epoch:
-            K.set_value(self.model.optimizer.lr, 0)
-        elif self.lr_schedule == 'constant':
-            lr = self._constant_schedule(epoch)
-            K.set_value(self.model.optimizer.lr, lr)
-        elif self.lr_schedule == 'cyclic':
-            lr = self._cyclic_schedule(epoch)
-            K.set_value(self.model.optimizer.lr, lr)
+    def assign_average_vars(self, var_list):
+        """Assign variables in var_list with their respective averages.
+        Args:
+            var_list: List of model variables to be assigned to their average.
+        Returns:
+            assign_op: The op corresponding to the assignment operation of
+            variables to their average.
+        Example:
+        ```python
+        model = tf.Sequential([...])
+        opt = tfa.optimizers.SWA(
+                tf.keras.optimizers.SGD(lr=2.0), 100, 10)
+        model.compile(opt, ...)
+        model.fit(x, y, ...)
+        # Update the weights to their mean before saving
+        opt.assign_average_vars(model.variables)
+        model.save('model.h5')
+        ```
+        """
+        assign_op = tf.group(
+            [var.assign(self.get_slot(var, 'average')) for var in var_list])
+        return assign_op
 
-    def _constant_schedule(self, epoch):
-        
-        t = epoch / self.start_epoch
-        lr_ratio = self.swa_lr / self.init_lr
-        if t <= 0.5:
-            factor = 1.0
-        elif t <= 0.9:
-            factor = 1.0 - (1.0 - lr_ratio) * (t - 0.5) / 0.4
-        else:
-            factor = lr_ratio
-        return self.init_lr * factor
-    
-    def _cyclic_schedule(self, epoch):
-        
-        swa_epoch = epoch - self.start_epoch
-        
-        if epoch >= self.start_epoch:
-            t = (((swa_epoch-1) % self.swa_freq)+1)/self.swa_freq
-            return (1-t)*self.swa_lr2 + t*self.swa_lr
-        else:
-            return self._constant_schedule(epoch)
-    
-    def _set_swa_weights(self, epoch):
-        
-        self.model.set_weights(self.swa_weights)
-        
-        if self.verbose > 0:
-            print('\nEpoch %05d: final model weights set to stochastic weight average'
-                  % (epoch + 1))     
-    
-    def _check_batch_norm(self):
-              
-        self.batch_norm_momentums = []
-        self.batch_norm_layers = []
-        self.has_batch_norm = False
-        self.running_bn_epoch = False
-        
-        for layer in self.model.layers:
-            if issubclass(layer.__class__, BatchNormalization):
-                self.has_batch_norm = True
-                self.batch_norm_momentums.append(layer.momentum)
-                self.batch_norm_layers.append(layer)
-                    
-        if self.verbose > 0 and self.has_batch_norm:
-            print('Model uses batch normalization. SWA will require last epoch '
-                  'to be a forward pass and will run with no learning rate')
-    
-    def _reset_batch_norm(self):
-        
-        for layer in self.batch_norm_layers:
-            shape = (list(layer.input_spec.axes.values())[0],)
+    def get_config(self):
+        config = {
+            'optimizer': tf.keras.optimizers.serialize(self._optimizer),
+            'average_period': self._serialize_hyperparameter('average_period'),
+            'start_averaging':
+            self._serialize_hyperparameter('start_averaging')
+        }
+        base_config = super(SWA, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
 
-            layer.moving_mean = layer.add_weight(
-                shape=shape,
-                name='moving_mean',
-                initializer=layer.moving_mean_initializer,
-                trainable=layer.moving_mean.trainable)
-            
-            layer.moving_variance = layer.add_weight(
-                shape=shape,
-                name='moving_variance',
-                initializer=layer.moving_variance_initializer,
-                trainable=layer.moving_variance.trainable)
-          
-    def _restore_batch_norm(self):
-        
-        for layer, momentum in zip(self.batch_norm_layers, self.batch_norm_momentums):
-            layer.momentum = momentum
-# Code is ported from https://github.com/fastai/fastai
+    @property
+    def lr(self):
+        return self._optimizer._get_hyper('learning_rate')  # pylint: disable=protected-access
+
+    @lr.setter
+    def lr(self, lr):
+        self._optimizer._set_hyper(
+            'learning_rate', lr)  # pylint: disable=protected-access
+
+    @property
+    def learning_rate(self):
+        return self._optimizer._get_hyper('learning_rate')  # pylint: disable=protected-access
+
+    @learning_rate.setter
+    def learning_rate(self, learning_rate):
+        self._optimizer._set_hyper(
+            'learning_rate', learning_rate)  # pylint: disable=protected-access
+
+    @classmethod
+    def from_config(cls, config, custom_objects=None):
+        optimizer = tf.keras.optimizers.deserialize(
+            config.pop('optimizer'),
+            custom_objects=custom_objects,
+        )
+        return cls(optimizer, **config)
+
+
 class OneCycleLR(Callback):
     def __init__(self,
                  max_lr,
@@ -275,7 +232,8 @@ class OneCycleLR(Callback):
 
         self.initial_lr = max_lr
         self.end_percentage = end_percentage
-        self.scale = float(scale_percentage) if scale_percentage is not None else float(end_percentage)
+        self.scale = float(
+            scale_percentage) if scale_percentage is not None else float(end_percentage)
         self.max_momentum = maximum_momentum
         self.min_momentum = minimum_momentum
         self.verbose = verbose
@@ -314,7 +272,8 @@ class OneCycleLR(Callback):
         """
         if self.clr_iterations > 2 * self.mid_cycle_id:
             current_percentage = (self.clr_iterations - 2 * self.mid_cycle_id)
-            current_percentage /= float((self.num_iterations - 2 * self.mid_cycle_id))
+            current_percentage /= float((self.num_iterations -
+                                         2 * self.mid_cycle_id))
             new_lr = self.initial_lr * (1. + (current_percentage *
                                               (1. - 100.) / 100.)) * self.scale
 
@@ -349,7 +308,7 @@ class OneCycleLR(Callback):
 
         elif self.clr_iterations > self.mid_cycle_id:
             current_percentage = 1. - ((self.clr_iterations - self.mid_cycle_id) / float(
-                                        self.mid_cycle_id))
+                self.mid_cycle_id))
             new_momentum = self.max_momentum - current_percentage * (
                 self.max_momentum - self.min_momentum)
 
@@ -375,16 +334,19 @@ class OneCycleLR(Callback):
                 remainder = 0
             else:
                 remainder = 1
-            self.num_iterations = (self.epochs + remainder) * self.samples // self.batch_size
+            self.num_iterations = (self.epochs + remainder) * \
+                self.samples // self.batch_size
 
-        self.mid_cycle_id = int(self.num_iterations * ((1. - self.end_percentage)) / float(2))
+        self.mid_cycle_id = int(self.num_iterations *
+                                ((1. - self.end_percentage)) / float(2))
 
         self._reset()
         K.set_value(self.model.optimizer.lr, self.compute_lr())
 
         if self._update_momentum:
             if not hasattr(self.model.optimizer, 'momentum'):
-                raise ValueError("Momentum can be updated only on SGD optimizer !")
+                raise ValueError(
+                    "Momentum can be updated only on SGD optimizer !")
 
             new_momentum = self.compute_momentum()
             K.set_value(self.model.optimizer.momentum, new_momentum)
@@ -401,7 +363,8 @@ class OneCycleLR(Callback):
 
         if self._update_momentum:
             if not hasattr(self.model.optimizer, 'momentum'):
-                raise ValueError("Momentum can be updated only on SGD optimizer !")
+                raise ValueError(
+                    "Momentum can be updated only on SGD optimizer !")
 
             new_momentum = self.compute_momentum()
 
@@ -424,7 +387,6 @@ class OneCycleLR(Callback):
 
 class LRFinder(Callback):
 
-    
     def __init__(self,
                  num_samples,
                  batch_size,
@@ -438,53 +400,7 @@ class LRFinder(Callback):
                  save_dir=None,
                  verbose=True):
         """
-        This class uses the Cyclic Learning Rate history to find a
-        set of learning rates that can be good initializations for the
-        One-Cycle training proposed by Leslie Smith in the paper referenced
-        below.
-        A port of the Fast.ai implementation for Keras.
-        # Note
-        This requires that the model be trained for exactly 1 epoch. If the model
-        is trained for more epochs, then the metric calculations are only done for
-        the first epoch.
-        # Interpretation
-        Upon visualizing the loss plot, check where the loss starts to increase
-        rapidly. Choose a learning rate at somewhat prior to the corresponding
-        position in the plot for faster convergence. This will be the maximum_lr lr.
-        Choose the max value as this value when passing the `max_val` argument
-        to OneCycleLR callback.
-        Since the plot is in log-scale, you need to compute 10 ^ (-k) of the x-axis
-        # Arguments:
-            num_samples: Integer. Number of samples in the dataset.
-            batch_size: Integer. Batch size during training.
-            minimum_lr: Float. Initial learning rate (and the minimum).
-            maximum_lr: Float. Final learning rate (and the maximum).
-            lr_scale: Can be one of ['exp', 'linear']. Chooses the type of
-                scaling for each update to the learning rate during subsequent
-                batches. Choose 'exp' for large range and 'linear' for small range.
-            validation_data: Requires the validation dataset as a tuple of
-                (X, y) belonging to the validation set. If provided, will use the
-                validation set to compute the loss metrics. Else uses the training
-                batch loss. Will warn if not provided to alert the user.
-            validation_sample_rate: Positive or Negative Integer. Number of batches to sample from the
-                validation set per iteration of the LRFinder. Larger number of
-                samples will reduce the variance but will take longer time to execute
-                per batch.
-                If Positive > 0, will sample from the validation dataset
-                If Megative, will use the entire dataset
-            stopping_criterion_factor: Integer or None. A factor which is used
-                to measure large increase in the loss value during training.
-                Since callbacks cannot stop training of a model, it will simply
-                stop logging the additional values from the epochs after this
-                stopping criterion has been met.
-                If None, this check will not be performed.
-            loss_smoothing_beta: Float. The smoothing factor for the moving
-                average of the loss function.
-            save_dir: Optional, String. If passed a directory path, the callback
-                will save the running loss and learning rates to two separate numpy
-                arrays inside this directory. If the directory in this path does not
-                exist, they will be created.
-            verbose: Whether to print the learning rate after every batch of training.
+        Keras LRFinder ported from fast.ai
         # References:
             - [A disciplined approach to neural network hyper-parameters: Part 1 -- learning rate, batch size, weight_decay, and weight decay](https://arxiv.org/abs/1803.09820)
         """
@@ -500,7 +416,8 @@ class LRFinder(Callback):
             if validation_sample_rate > 0 or validation_sample_rate < 0:
                 self.validation_sample_rate = validation_sample_rate
             else:
-                raise ValueError("`validation_sample_rate` must be a positive or negative integer other than o")
+                raise ValueError(
+                    "`validation_sample_rate` must be a positive or negative integer other than o")
         else:
             self.use_validation_set = False
             self.validation_sample_rate = 0
@@ -572,7 +489,8 @@ class LRFinder(Callback):
             x = X[idx]
             y = Y[idx]
 
-            values = self.model.evaluate(x, y, batch_size=self.batch_size, verbose=False)
+            values = self.model.evaluate(
+                x, y, batch_size=self.batch_size, verbose=False)
             loss = values[0]
         else:
             loss = logs['loss']

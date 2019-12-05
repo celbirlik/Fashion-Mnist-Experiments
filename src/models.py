@@ -21,6 +21,7 @@ from tensorflow.keras.callbacks import EarlyStopping, Callback
 from tensorflow.keras.utils import get_source_inputs
 import numpy as np
 
+
 def _bn_relu(x, bn_name=None, relu_name=None):
     """Helper to build a BN -> relu block
     """
@@ -370,19 +371,19 @@ def ResNet(input_shape=None, classes=10, block='bottleneck', residual_unit='v2',
     return model
 
 
-def ResNet18(input_shape, classes, dropout=None):
+def ResNet18(input_shape=(28, 28, 1), classes=10, dropout=None):
     """ResNet with 18 layers and v2 residual units
     """
     return ResNet(input_shape, classes, basic_block, repetitions=[2, 2, 2, 2], dropout=dropout)
 
 
-def ResNet34(input_shape, classes, dropout=None):
+def ResNet34(input_shape=(28, 28, 1), classes=10, dropout=None):
     """ResNet with 34 layers and v2 residual units
     """
     return ResNet(input_shape, classes, basic_block, repetitions=[3, 4, 6, 3], dropout=dropout)
 
 
-def ResNet50(input_shape, classes):
+def ResNet50(input_shape=(28, 28, 1), classes=10):
     """ResNet with 50 layers and v2 residual units
     """
     return ResNet(input_shape, classes, bottleneck, repetitions=[3, 4, 6, 3])
@@ -400,269 +401,153 @@ def ResNet152(input_shape, classes):
     return ResNet(input_shape, classes, bottleneck, repetitions=[3, 8, 36, 3])
 
 
+def initial_conv(input):
+    x = Convolution2D(16, 3, 3, border_mode='same')(input)
 
-def WideResidualNetwork(depth=28, width=8, dropout_rate=0.25,
-                        include_top=True, weights=None,
-                        input_tensor=None, input_shape=None,
-                        classes=10, activation='softmax'):
-    """Instantiate the Wide Residual Network architecture,
-        optionally loading weights pre-trained
-        on CIFAR-10. Note that when using TensorFlow,
-        for best performance you should set
-        `image_dim_ordering="tf"` in your Keras config
-        at ~/.keras/keras.json.
-        The model and the weights are compatible with both
-        TensorFlow and Theano. The dimension ordering
-        convention used by the model is the one
-        specified in your Keras config file.
-        # Arguments
-            depth: number or layers in the DenseNet
-            width: multiplier to the ResNet width (number of filters)
-            dropout_rate: dropout rate
-            include_top: whether to include the fully-connected
-                layer at the top of the network.
-            weights: one of `None` (random initialization) or
-                "cifar10" (pre-training on CIFAR-10)..
-            input_tensor: optional Keras tensor (i.e. output of `layers.Input()`)
-                to use as image input for the model.
-            input_shape: optional shape tuple, only to be specified
-                if `include_top` is False (otherwise the input shape
-                has to be `(32, 32, 3)` (with `tf` dim ordering)
-                or `(3, 32, 32)` (with `th` dim ordering).
-                It should have exactly 3 inputs channels,
-                and width and height should be no smaller than 8.
-                E.g. `(200, 200, 3)` would be one valid value.
-            classes: optional number of classes to classify images
-                into, only to be specified if `include_top` is True, and
-                if no `weights` argument is specified.
-        # Returns
-            A Keras model instance.
-        """
-
-    if weights not in {'cifar10', None}:
-        raise ValueError('The `weights` argument should be either '
-                         '`None` (random initialization) or `cifar10` '
-                         '(pre-training on CIFAR-10).')
-
-    if weights == 'cifar10' and include_top and classes != 10:
-        raise ValueError('If using `weights` as CIFAR 10 with `include_top`'
-                         ' as true, `classes` should be 10')
-
-    if (depth - 4) % 6 != 0:
-        raise ValueError('Depth of the network must be such that (depth - 4)'
-                         'should be divisible by 6.')
-
-    # Determine proper input shape
-
-    if input_tensor is None:
-        img_input = Input(shape=input_shape)
-    else:
-        if not K.is_keras_tensor(input_tensor):
-            img_input = Input(tensor=input_tensor, shape=input_shape)
-        else:
-            img_input = input_tensor
-
-    x = __create_wide_residual_network(classes, img_input, include_top, depth, width,
-                                       dropout_rate, activation)
-
-    # Ensure that the model takes into account
-    # any potential predecessors of `input_tensor`.
-    if input_tensor is not None:
-        inputs = get_source_inputs(input_tensor)
-    else:
-        inputs = img_input
-    # Create model.
-    model = Model(inputs, x, name='wide-resnet')
-
-    # load weights    channel_axis = 1 if K.image_data_format() == 'channels_first' else -1
-
-    if weights == 'cifar10':
-        if (depth == 28) and (width == 8) and (dropout_rate == 0.0):
-            # Default parameters match. Weights for this model exist:
-
-            if K.image_data_format() == 'channels_first':
-                if include_top:
-                    h5_file = 'wide_resnet_28_8_th_dim_ordering_th_kernels.h5'
-                    weights_path = get_file(h5_file,
-                                            TH_WEIGHTS_PATH,
-                                            cache_subdir='models')
-                else:
-                    h5_file = 'wide_resnet_28_8_th_dim_ordering_th_kernels_no_top.h5'
-                    weights_path = get_file(h5_file,
-                                            TH_WEIGHTS_PATH_NO_TOP,
-                                            cache_subdir='models')
-
-                model.load_weights(weights_path)
-
-                if K.backend() == 'tensorflow':
-                    warnings.warn('You are using the TensorFlow backend, yet you '
-                                  'are using the Theano '
-                                  'image dimension ordering convention '
-                                  '(`image_dim_ordering="th"`). '
-                                  'For best performance, set '
-                                  '`image_dim_ordering="tf"` in '
-                                  'your Keras config '
-                                  'at ~/.keras/keras.json.')
-                    convert_all_kernels_in_model(model)
-            else:
-                if include_top:
-                    h5_file = 'wide_resnet_28_8_tf_dim_ordering_tf_kernels.h5'
-                    weights_path = get_file(h5_file,
-                                            TF_WEIGHTS_PATH,
-                                            cache_subdir='models')
-                else:
-                    h5_file = 'wide_resnet_28_8_tf_dim_ordering_tf_kernels_no_top.h5'
-                    weights_path = get_file(h5_file,
-                                            TF_WEIGHTS_PATH_NO_TOP,
-                                            cache_subdir='models')
-
-                model.load_weights(weights_path)
-
-                if K.backend() == 'theano':
-                    convert_all_kernels_in_model(model)
-
-    return model
-
-
-def __conv1_block(input):
-    x = Conv2D(16, (3, 3), padding='same')(input)
-
-    channel_axis = 1 if K.image_data_format() == 'channels_first' else -1
+    channel_axis = 1 if K.image_dim_ordering() == "th" else -1
 
     x = BatchNormalization(axis=channel_axis)(x)
     x = Activation('relu')(x)
     return x
 
 
-def __conv2_block(input, k=1, dropout=0.0):
+def conv1_block(input, k=1, dropout=0.0):
     init = input
 
-    channel_axis = 1 if K.image_data_format() == 'channels_first' else -1
+    channel_axis = 1 if K.image_dim_ordering() == "th" else -1
 
-    # Check if input number of filters is same as 16 * k, else create
-    # convolution2d for this input
-    if K.image_data_format() == 'channels_first':
-        if init._shape[1] != 16 * k:
-            init = Conv2D(16 * k, (1, 1), activation='linear', padding='same')(init)
+    # Check if input number of filters is same as 16 * k, else create convolution2d for this input
+    if K.image_dim_ordering() == "th":
+        if init._keras_shape[1] != 16 * k:
+            init = Convolution2D(
+                16 * k, 1, 1, activation='linear', border_mode='same')(init)
     else:
-        if init._shape[-1] != 16 * k:
-            init = Conv2D(16 * k, (1, 1), activation='linear', padding='same')(init)
+        if init._keras_shape[-1] != 16 * k:
+            init = Convolution2D(
+                16 * k, 1, 1, activation='linear', border_mode='same')(init)
 
-    x = Conv2D(16 * k, (3, 3), padding='same')(input)
+    x = Convolution2D(16 * k, 3, 3, border_mode='same')(input)
     x = BatchNormalization(axis=channel_axis)(x)
     x = Activation('relu')(x)
 
     if dropout > 0.0:
         x = Dropout(dropout)(x)
 
-    x = Conv2D(16 * k, (3, 3), padding='same')(x)
+    x = Convolution2D(16 * k, 3, 3, border_mode='same')(x)
     x = BatchNormalization(axis=channel_axis)(x)
     x = Activation('relu')(x)
 
-    m = Add()([init, x])
+    m = merge([init, x], mode='sum')
     return m
 
 
-def __conv3_block(input, k=1, dropout=0.0):
+def conv2_block(input, k=1, dropout=0.0):
     init = input
 
-    channel_axis = 1 if K.image_data_format() == 'channels_first' else -1
+    channel_axis = 1 if K.image_dim_ordering() == "th" else -1
 
-    # Check if input number of filters is same as 32 * k, else
-    # create convolution2d for this input
-    if K.image_data_format() == 'channels_first':
-        if init.shape[1] != 32 * k:
-            init = Conv2D(32 * k, (1, 1), activation='linear', padding='same')(init)
+    # Check if input number of filters is same as 32 * k, else create convolution2d for this input
+    if K.image_dim_ordering() == "th":
+        if init._keras_shape[1] != 32 * k:
+            init = Convolution2D(
+                32 * k, 1, 1, activation='linear', border_mode='same')(init)
     else:
-        if init.shape[-1] != 32 * k:
-            init = Conv2D(32 * k, (1, 1), activation='linear', padding='same')(init)
+        if init._keras_shape[-1] != 32 * k:
+            init = Convolution2D(
+                32 * k, 1, 1, activation='linear', border_mode='same')(init)
 
-    x = Conv2D(32 * k, (3, 3), padding='same')(input)
+    x = Convolution2D(32 * k, 3, 3, border_mode='same')(input)
     x = BatchNormalization(axis=channel_axis)(x)
     x = Activation('relu')(x)
 
     if dropout > 0.0:
         x = Dropout(dropout)(x)
 
-    x = Conv2D(32 * k, (3, 3), padding='same')(x)
+    x = Convolution2D(32 * k, 3, 3, border_mode='same')(x)
     x = BatchNormalization(axis=channel_axis)(x)
     x = Activation('relu')(x)
 
-    m = Add()([init, x])
+    m = merge([init, x], mode='sum')
     return m
 
 
-def ___conv4_block(input, k=1, dropout=0.0):
+def conv3_block(input, k=1, dropout=0.0):
     init = input
 
-    channel_axis = 1 if K.image_data_format() == 'channels_first' else -1
+    channel_axis = 1 if K.image_dim_ordering() == "th" else -1
 
-    # Check if input number of filters is same as 64 * k, else
-    # create convolution2d for this input
-    if channel_axis==1:
-        if init.shape[1] != 64 * k:
-            init = Conv2D(64 * k, (1, 1), activation='linear', padding='same')(init)
+    # Check if input number of filters is same as 64 * k, else create convolution2d for this input
+    if K.image_dim_ordering() == "th":
+        if init._keras_shape[1] != 64 * k:
+            init = Convolution2D(
+                64 * k, 1, 1, activation='linear', border_mode='same')(init)
     else:
-        if init.shape[-1] != 64 * k:
-            init = Conv2D(64 * k, (1, 1), activation='linear', padding='same')(init)
+        if init._keras_shape[-1] != 64 * k:
+            init = Convolution2D(
+                64 * k, 1, 1, activation='linear', border_mode='same')(init)
 
-    x = Conv2D(64 * k, (3, 3), padding='same')(input)
+    x = Convolution2D(64 * k, 3, 3, border_mode='same')(input)
     x = BatchNormalization(axis=channel_axis)(x)
     x = Activation('relu')(x)
 
     if dropout > 0.0:
         x = Dropout(dropout)(x)
 
-    x = Conv2D(64 * k, (3, 3), padding='same')(x)
+    x = Convolution2D(64 * k, 3, 3, border_mode='same')(x)
     x = BatchNormalization(axis=channel_axis)(x)
     x = Activation('relu')(x)
 
-    m = Add()([init, x])
+    m = merge([init, x], mode='sum')
     return m
 
 
-def __create_wide_residual_network(nb_classes, img_input, include_top, depth=28,
-                                   width=8, dropout=0.0, activation='softmax'):
-    ''' Creates a Wide Residual Network with specified parameters
-    Args:
-        nb_classes: Number of output classes
-        img_input: Input tensor or layer
-        include_top: Flag to include the last dense layer
-        depth: Depth of the network. Compute N = (n - 4) / 6.
-               For a depth of 16, n = 16, N = (16 - 4) / 6 = 2
-               For a depth of 28, n = 28, N = (28 - 4) / 6 = 4
-               For a depth of 40, n = 40, N = (40 - 4) / 6 = 6
-        width: Width of the network.
-        dropout: Adds dropout if value is greater than 0.0
-    Returns:a Keras Model
-    '''
+def create_WRN(input_dim=(28, 28, 1), nb_classes=10, N=2, k=4, dropout=0.0, verbose=0):
+    """
+    Creates a Wide Residual Network with specified parameters
+    :param input: Input Keras object
+    :param nb_classes: Number of output classes
+    :param N: Depth of the network. Compute N = (n - 4) / 6.
+              Example : For a depth of 16, n = 16, N = (16 - 4) / 6 = 2
+              Example2: For a depth of 28, n = 28, N = (28 - 4) / 6 = 4
+              Example3: For a depth of 40, n = 40, N = (40 - 4) / 6 = 6
+    :param k: Width of the network.
+    :param dropout: Adds dropout if value is greater than 0.0
+    :param verbose: Debug info to describe created WRN
+    :return:
+    """
+    ip = Input(shape=input_dim)
 
-    N = (depth - 4) // 6
-
-    x = __conv1_block(img_input)
+    x = initial_conv(ip)
     nb_conv = 4
 
     for i in range(N):
-        x = __conv2_block(x, width, dropout)
+        x = conv1_block(x, k, dropout)
         nb_conv += 2
 
     x = MaxPooling2D((2, 2))(x)
 
     for i in range(N):
-        x = __conv3_block(x, width, dropout)
+        x = conv2_block(x, k, dropout)
         nb_conv += 2
 
     x = MaxPooling2D((2, 2))(x)
 
     for i in range(N):
-        x = ___conv4_block(x, width, dropout)
+        x = conv3_block(x, k, dropout)
         nb_conv += 2
 
-    if include_top:
-        x = GlobalAveragePooling2D()(x)
-        x = Dense(nb_classes, activation=activation)(x)
+    x = AveragePooling2D((8, 8))(x)
+    x = Flatten()(x)
 
-    return x
+    x = Dense(nb_classes, activation='softmax')(x)
+
+    model = Model(ip, x)
+
+    if verbose:
+        print("Wide Residual Network-%d-%d created." % (nb_conv, k))
+    return model
+
+
 class ShakeShake(Layer):
     """ Shake-Shake-Image Layer """
 
@@ -681,9 +566,11 @@ class ShakeShake(Layer):
         alpha = K.random_uniform((batch_size, 1, 1, 1))
         beta = K.random_uniform((batch_size, 1, 1, 1))
         # shake-shake during training phase
+
         def x_shake():
             return beta * x1 + (1 - beta) * x2 + K.stop_gradient((alpha - beta) * x1 + (beta - alpha) * x2)
         # even-even during testing phase
+
         def x_even():
             return 0.5 * x1 + 0.5 * x2
         return K.in_train_phase(x_shake, x_even)
@@ -693,18 +580,17 @@ class ShakeShake(Layer):
         return input_shape[0]
 
 
-
 def create_residual_branch(x, filters, stride):
     """ Regular Branch of a Residual network: ReLU -> Conv2D -> BN repeated twice """
     x = ReLU()(x)
-    x =Conv2D(filters, kernel_size=3, strides=stride, padding='same',
-                            kernel_initializer='he_normal', kernel_regularizer=l2(1e-4),
-                            use_bias=False)(x)
+    x = Conv2D(filters, kernel_size=3, strides=stride, padding='same',
+               kernel_initializer='he_normal', kernel_regularizer=l2(1e-4),
+               use_bias=False)(x)
     x = BatchNormalization()(x)
     x = ReLU()(x)
     x = Conv2D(filters, kernel_size=3, strides=1, padding='same',
-                            kernel_initializer='he_normal', kernel_regularizer=l2(1e-4),
-                            use_bias=False)(x)
+               kernel_initializer='he_normal', kernel_regularizer=l2(1e-4),
+               use_bias=False)(x)
     x = BatchNormalization()(x)
     return x
 
@@ -714,12 +600,12 @@ def create_residual_shortcut(x, filters, stride):
     x = ReLU()(x)
     x1 = Lambda(lambda y: y[:, 0:-1:stride, 0:-1:stride, :])(x)
     x1 = Conv2D(filters // 2, kernel_size=1, strides=1, padding='valid',
-                             kernel_initializer='he_normal', kernel_regularizer=l2(1e-4),
-                             use_bias=False)(x1)
+                kernel_initializer='he_normal', kernel_regularizer=l2(1e-4),
+                use_bias=False)(x1)
     x2 = Lambda(lambda y: y[:, 1::stride, 1::stride, :])(x)
     x2 = Conv2D(filters // 2, kernel_size=1, strides=1, padding='valid',
-                             kernel_initializer='he_normal', kernel_regularizer=l2(1e-4),
-                             use_bias=False)(x2)
+                kernel_initializer='he_normal', kernel_regularizer=l2(1e-4),
+                use_bias=False)(x2)
     x = Concatenate()([x1, x2])
     x = BatchNormalization()(x)
     return x
@@ -729,7 +615,8 @@ def create_residual_block(x, filters, stride=1):
     """ Residual Block with Shake-Shake regularization and shortcut """
     x1 = create_residual_branch(x, filters, stride)
     x2 = create_residual_branch(x, filters, stride)
-    if stride > 1: x = create_residual_shortcut(x, filters, stride)
+    if stride > 1:
+        x = create_residual_shortcut(x, filters, stride)
     return Add()([x, ShakeShake()([x1, x2])])
 
 
@@ -740,14 +627,15 @@ def create_residual_layer(x, filters, blocks, stride):
         x = create_residual_block(x, filters, 1)
     return x
 
-def create_shakeshake_res34(n_classes, n_blocks=[5,5,5],input_shape=(32,32,1), activation='softmax'):
+
+def create_shakeshake_res34(n_classes=10, n_blocks=[5, 5, 5], input_shape=(32, 32, 1), activation='softmax'):
     """ Residual Network with Shake-Shake regularization modeled after ResNet32 """
     # Input and first convolutional layer
     x_in = Input(shape=input_shape)
     x = Conv2D(64, kernel_size=7, strides=2, padding='same',
-                            kernel_initializer='he_normal', kernel_regularizer=l2(1e-4),
-                            use_bias=False)(x_in)
-    x =BatchNormalization()(x)
+               kernel_initializer='he_normal', kernel_regularizer=l2(1e-4),
+               use_bias=False)(x_in)
+    x = BatchNormalization()(x)
     x = MaxPooling2D(pool_size=3, strides=2, padding='same')(x)
     # Three stages of four residual blocks
     x = create_residual_layer(x, 64, n_blocks[0], 1)
@@ -755,28 +643,33 @@ def create_shakeshake_res34(n_classes, n_blocks=[5,5,5],input_shape=(32,32,1), a
     x = create_residual_layer(x, 256, n_blocks[2], 2)
     x = create_residual_layer(x, 512, n_blocks[3], 2)
     # Output pooling and dense layer
-    x =ReLU()(x)
+    x = ReLU()(x)
     x = GlobalAveragePooling2D()(x)
-    x_out = Dense(n_classes, activation=activation, kernel_initializer='he_normal')(x)
+    x_out = Dense(n_classes, activation=activation,
+                  kernel_initializer='he_normal')(x)
     return Model(x_in, x_out)
+
+
 def channel_split(x, name=''):
     # equipartition
     in_channles = x.shape.as_list()[-1]
     ip = in_channles // 2
-    c_hat = Lambda(lambda z: z[:, :, :, 0:ip], name='%s/sp%d_slice' % (name, 0))(x)
+    c_hat = Lambda(lambda z: z[:, :, :, 0:ip],
+                   name='%s/sp%d_slice' % (name, 0))(x)
     c = Lambda(lambda z: z[:, :, :, ip:], name='%s/sp%d_slice' % (name, 1))(x)
     return c_hat, c
+
 
 def channel_shuffle(x):
     height, width, channels = x.shape.as_list()[1:]
     channels_per_split = channels // 2
     x = K.reshape(x, [-1, height, width, 2, channels_per_split])
-    x = K.permute_dimensions(x, (0,1,2,4,3))
+    x = K.permute_dimensions(x, (0, 1, 2, 4, 3))
     x = K.reshape(x, [-1, height, width, channels])
     return x
 
 
-def shuffle_unit(inputs, out_channels, bottleneck_ratio,strides=2,stage=1,block=1):
+def shuffle_unit(inputs, out_channels, bottleneck_ratio, strides=2, stage=1, block=1):
     if K.image_data_format() == 'channels_last':
         bn_axis = -1
     else:
@@ -788,64 +681,79 @@ def shuffle_unit(inputs, out_channels, bottleneck_ratio,strides=2,stage=1,block=
         c_hat, c = channel_split(inputs, '{}/spl'.format(prefix))
         inputs = c
 
-    x = Conv2D(bottleneck_channels, kernel_size=(1,1), strides=1, padding='same', name='{}/1x1conv_1'.format(prefix))(inputs)
-    x = BatchNormalization(axis=bn_axis, name='{}/bn_1x1conv_1'.format(prefix))(x)
+    x = Conv2D(bottleneck_channels, kernel_size=(1, 1), strides=1,
+               padding='same', name='{}/1x1conv_1'.format(prefix))(inputs)
+    x = BatchNormalization(
+        axis=bn_axis, name='{}/bn_1x1conv_1'.format(prefix))(x)
     x = Activation('relu', name='{}/relu_1x1conv_1'.format(prefix))(x)
-    x = DepthwiseConv2D(kernel_size=3, strides=strides, padding='same', name='{}/3x3dwconv'.format(prefix))(x)
-    x = BatchNormalization(axis=bn_axis, name='{}/bn_3x3dwconv'.format(prefix))(x)
-    x = Conv2D(bottleneck_channels, kernel_size=1,strides=1,padding='same', name='{}/1x1conv_2'.format(prefix))(x)
-    x = BatchNormalization(axis=bn_axis, name='{}/bn_1x1conv_2'.format(prefix))(x)
+    x = DepthwiseConv2D(kernel_size=3, strides=strides,
+                        padding='same', name='{}/3x3dwconv'.format(prefix))(x)
+    x = BatchNormalization(
+        axis=bn_axis, name='{}/bn_3x3dwconv'.format(prefix))(x)
+    x = Conv2D(bottleneck_channels, kernel_size=1, strides=1,
+               padding='same', name='{}/1x1conv_2'.format(prefix))(x)
+    x = BatchNormalization(
+        axis=bn_axis, name='{}/bn_1x1conv_2'.format(prefix))(x)
     x = Activation('relu', name='{}/relu_1x1conv_2'.format(prefix))(x)
 
     if strides < 2:
-        ret = Concatenate(axis=bn_axis, name='{}/concat_1'.format(prefix))([x, c_hat])
+        ret = Concatenate(
+            axis=bn_axis, name='{}/concat_1'.format(prefix))([x, c_hat])
     else:
-        s2 = DepthwiseConv2D(kernel_size=3, strides=2, padding='same', name='{}/3x3dwconv_2'.format(prefix))(inputs)
-        s2 = BatchNormalization(axis=bn_axis, name='{}/bn_3x3dwconv_2'.format(prefix))(s2)
-        s2 = Conv2D(bottleneck_channels, kernel_size=1,strides=1,padding='same', name='{}/1x1_conv_3'.format(prefix))(s2)
-        s2 = BatchNormalization(axis=bn_axis, name='{}/bn_1x1conv_3'.format(prefix))(s2)
+        s2 = DepthwiseConv2D(kernel_size=3, strides=2, padding='same',
+                             name='{}/3x3dwconv_2'.format(prefix))(inputs)
+        s2 = BatchNormalization(
+            axis=bn_axis, name='{}/bn_3x3dwconv_2'.format(prefix))(s2)
+        s2 = Conv2D(bottleneck_channels, kernel_size=1, strides=1,
+                    padding='same', name='{}/1x1_conv_3'.format(prefix))(s2)
+        s2 = BatchNormalization(
+            axis=bn_axis, name='{}/bn_1x1conv_3'.format(prefix))(s2)
         s2 = Activation('relu', name='{}/relu_1x1conv_3'.format(prefix))(s2)
-        ret = Concatenate(axis=bn_axis, name='{}/concat_2'.format(prefix))([x, s2])
+        ret = Concatenate(
+            axis=bn_axis, name='{}/concat_2'.format(prefix))([x, s2])
 
-    ret = Lambda(channel_shuffle, name='{}/channel_shuffle'.format(prefix))(ret)
+    ret = Lambda(channel_shuffle,
+                 name='{}/channel_shuffle'.format(prefix))(ret)
 
     return ret
 
 
 def block(x, channel_map, bottleneck_ratio, repeat=1, stage=1):
     x = shuffle_unit(x, out_channels=channel_map[stage-1],
-                      strides=2,bottleneck_ratio=bottleneck_ratio,stage=stage,block=1)
+                     strides=2, bottleneck_ratio=bottleneck_ratio, stage=stage, block=1)
 
     for i in range(1, repeat+1):
-        x = shuffle_unit(x, out_channels=channel_map[stage-1],strides=1,
-                          bottleneck_ratio=bottleneck_ratio,stage=stage, block=(1+i))
+        x = shuffle_unit(x, out_channels=channel_map[stage-1], strides=1,
+                         bottleneck_ratio=bottleneck_ratio, stage=stage, block=(1+i))
 
     return x
 
 
-
 def create_ShufflenetV2(include_top=True,
-                 input_tensor=None,
-                 scale_factor=1.0,
-                 pooling='max',
-                 input_shape=(224,224,3),
-                 load_model=None,
-                 num_shuffle_units=[3,7,3],
-                 bottleneck_ratio=1,
-                 classes=1000):
+                        input_tensor=None,
+                        scale_factor=1.0,
+                        pooling='avg',
+                        input_shape=(28, 28, 1),
+                        load_model=None,
+                        num_shuffle_units=[3, 7, 3],
+                        bottleneck_ratio=1,
+                        classes=10):
     if K.backend() != 'tensorflow':
         raise RuntimeError('Only tensorflow supported for now')
-    name = 'ShuffleNetV2_{}_{}_{}'.format(scale_factor, bottleneck_ratio, "".join([str(x) for x in num_shuffle_units]))
+    name = 'ShuffleNetV2_{}_{}_{}'.format(
+        scale_factor, bottleneck_ratio, "".join([str(x) for x in num_shuffle_units]))
 
-    out_dim_stage_two = {0.5:48, 1:116, 1.5:176, 2:244}
+    out_dim_stage_two = {0.5: 48, 1: 116, 1.5: 176, 2: 244}
 
     if pooling not in ['max', 'avg']:
         raise ValueError('Invalid value for pooling')
     if not (float(scale_factor)*4).is_integer():
         raise ValueError('Invalid value for scale_factor, should be x over 4')
-    exp = np.insert(np.arange(len(num_shuffle_units), dtype=np.float32), 0, 0)  # [0., 0., 1., 2.]
+    exp = np.insert(np.arange(len(num_shuffle_units),
+                              dtype=np.float32), 0, 0)  # [0., 0., 1., 2.]
     out_channels_in_stage = 2**exp
-    out_channels_in_stage *= out_dim_stage_two[bottleneck_ratio]  #  calculate output channels for each stage
+    # calculate output channels for each stage
+    out_channels_in_stage *= out_dim_stage_two[bottleneck_ratio]
     out_channels_in_stage[0] = 24  # first stage has always 24 output channels
     out_channels_in_stage *= scale_factor
     out_channels_in_stage = out_channels_in_stage.astype(int)
@@ -861,21 +769,23 @@ def create_ShufflenetV2(include_top=True,
     # create shufflenet architecture
     x = Conv2D(filters=out_channels_in_stage[0], kernel_size=(3, 3), padding='same', use_bias=False, strides=(2, 2),
                activation='relu', name='conv1')(img_input)
-    x = MaxPool2D(pool_size=(3, 3), strides=(2, 2), padding='same', name='maxpool1')(x)
+    x = MaxPool2D(pool_size=(3, 3), strides=(2, 2),
+                  padding='same', name='maxpool1')(x)
 
     # create stages containing shufflenet units beginning at stage 2
     for stage in range(len(num_shuffle_units)):
         repeat = num_shuffle_units[stage]
         x = block(x, out_channels_in_stage,
-                   repeat=repeat,
-                   bottleneck_ratio=bottleneck_ratio,
-                   stage=stage + 2)
+                  repeat=repeat,
+                  bottleneck_ratio=bottleneck_ratio,
+                  stage=stage + 2)
 
     if bottleneck_ratio < 2:
         k = 1024
     else:
         k = 2048
-    x = Conv2D(k, kernel_size=1, padding='same', strides=1, name='1x1conv5_out', activation='relu')(x)
+    x = Conv2D(k, kernel_size=1, padding='same', strides=1,
+               name='1x1conv5_out', activation='relu')(x)
 
     if pooling == 'avg':
         x = GlobalAveragePooling2D(name='global_avg_pool')(x)
@@ -898,16 +808,21 @@ def create_ShufflenetV2(include_top=True,
         model.load_weights('', by_name=True)
 
     return model
-def create_miniVGG(classes=10,input_shape=(28,28,1)):
 
-    model=Sequential()
-    model.add(Conv2D(filters=32, kernel_size=(3, 3), padding="same", 
-                input_shape=input_shape, activation='relu'))
-    model.add(Conv2D(filters=32, kernel_size=(3, 3), padding="same", activation='relu'))
+
+def create_miniVGG(classes=10, input_shape=(28, 28, 1)):
+
+    model = Sequential()
+    model.add(Conv2D(filters=32, kernel_size=(3, 3), padding="same",
+                     input_shape=input_shape, activation='relu'))
+    model.add(Conv2D(filters=32, kernel_size=(3, 3),
+                     padding="same", activation='relu'))
     model.add(MaxPooling2D(pool_size=(3, 3)))
     model.add(Dropout(0.25))
-    model.add(Conv2D(filters=64, kernel_size=(3, 3), padding="same", activation='relu'))
-    model.add(Conv2D(filters=64, kernel_size=(3, 3), padding="valid", activation='relu'))
+    model.add(Conv2D(filters=64, kernel_size=(3, 3),
+                     padding="same", activation='relu'))
+    model.add(Conv2D(filters=64, kernel_size=(3, 3),
+                     padding="valid", activation='relu'))
     model.add(MaxPooling2D(pool_size=(3, 3)))
     model.add(Dropout(0.25))
     model.add(Flatten())
@@ -916,38 +831,44 @@ def create_miniVGG(classes=10,input_shape=(28,28,1)):
     model.add(Dropout(0.25))
     model.add(Dense(256))
     model.add(LeakyReLU())
-    #model2.add(Dropout(0.5))
+    # model2.add(Dropout(0.5))
     model.add(Dense(classes, activation='softmax'))
     return model
-def create_basic_cnn(classes=10,input_shape=(28,28,1)):
+
+
+def create_basic_cnn(classes=10, input_shape=(28, 28, 1)):
 
     input = Input(shape=input_shape)
-    x = Conv2D(32, (5, 5), strides=1, padding='same')(input)
-    x = BatchNormalization(momentum=0.1, epsilon=1e-5, gamma_initializer='uniform')(x)
+    x = Conv2D(32, (3, 3), strides=1, padding='same')(input)
+    x = BatchNormalization(momentum=0.1, epsilon=1e-5,
+                           gamma_initializer='uniform')(x)
     x = Activation('relu')(x)
-    x = Conv2D(32, (5, 5), strides=1, padding='same')(x)
-    x = BatchNormalization(momentum=0.1, epsilon=1e-5, gamma_initializer='uniform')(x)
+    x = Conv2D(32, (3, 3), strides=1, padding='same')(x)
+    x = BatchNormalization(momentum=0.1, epsilon=1e-5,
+                           gamma_initializer='uniform')(x)
     x = Activation('relu')(x)
     x = MaxPooling2D(pool_size=2, strides=2, padding='same')(x)
-    x = Dropout (0.25)(x)
+    x = Dropout(0.25)(x)
 
     x = Conv2D(64, (3, 3), strides=1, padding='same')(x)
     # x = BatchNormalization(momentum=0.1, epsilon=1e-5, gamma_initializer='uniform')(x)
     x = Activation('relu')(x)
-    x = Dropout (0.5)(x)
+    x = Dropout(0.5)(x)
     x = Conv2D(64, (3, 3), strides=1, padding='same')(x)
-    x = BatchNormalization(momentum=0.1, epsilon=1e-5, gamma_initializer='uniform')(x)
+    x = BatchNormalization(momentum=0.1, epsilon=1e-5,
+                           gamma_initializer='uniform')(x)
     x = Activation('relu')(x)
     x = Conv2D(64, (3, 3), strides=1, padding='same')(x)
-    x = BatchNormalization(momentum=0.1, epsilon=1e-5, gamma_initializer='uniform')(x)
+    x = BatchNormalization(momentum=0.1, epsilon=1e-5,
+                           gamma_initializer='uniform')(x)
     x = Activation('relu')(x)
 
     x = MaxPooling2D(pool_size=2, strides=2, padding='same')(x)
-    x = Dropout (0.35)(x)
+    x = Dropout(0.35)(x)
     x = Flatten()(x)
     x = Dense(200)(x)
     x = Activation('relu')(x)
     x = BatchNormalization()(x)
     x = Dense(classes)(x)
     x = Activation('softmax')(x)
-    return Model(inputs = input, outputs =x)
+    return Model(inputs=input, outputs=x)
