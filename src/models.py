@@ -951,4 +951,3 @@ def create_basic_cnn(classes=10,input_shape=(28,28,1)):
     x = Dense(classes)(x)
     x = Activation('softmax')(x)
     return Model(inputs = input, outputs =x)
-create basic
