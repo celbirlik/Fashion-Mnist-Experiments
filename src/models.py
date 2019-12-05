@@ -19,6 +19,7 @@ from tensorflow.keras import backend as K
 from tensorflow.keras import Sequential
 from tensorflow.keras.callbacks import EarlyStopping, Callback
 from tensorflow.keras.utils import get_source_inputs
+import numpy as np
 
 def _bn_relu(x, bn_name=None, relu_name=None):
     """Helper to build a BN -> relu block
