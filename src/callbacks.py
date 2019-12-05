@@ -1,5 +1,8 @@
 import numpy as np
 import warnings
+from tensorflow.keras.layers import BatchNormalization
+from tensorflow.keras.callbacks import EarlyStopping, Callback
+from tensorflow.keras import backend as K
 
 # For augmentation
 def get_random_eraser(p=0.5, s_l=0.02, s_h=0.4, r_1=0.3, r_2=1/0.3, v_l=0, v_h=255, pixel_level=False):
