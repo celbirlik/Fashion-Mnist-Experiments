@@ -38,7 +38,7 @@ def get_random_eraser(p=0.5, s_l=0.02, s_h=0.4, r_1=0.3, r_2=1/0.3, v_l=0, v_h=2
 
 
 class SWA(tf.keras.optimizers.Optimizer):
-    ''''Stochastic Weight Averaging''''
+    '''Stochastic Weight Averaging'''
 
     def __init__(self,
                  optimizer,
