@@ -690,20 +690,19 @@ class ShakeShake(Layer):
     def compute_output_shape(self, input_shape):
         assert isinstance(input_shape, list)
         return input_shape[0]
-from tensorflow.keras.regularizers import l2
-l2 = l2(1e-4)
+
 
 
 def create_residual_branch(x, filters, stride):
     """ Regular Branch of a Residual network: ReLU -> Conv2D -> BN repeated twice """
     x = ReLU()(x)
     x =Conv2D(filters, kernel_size=3, strides=stride, padding='same',
-                            kernel_initializer='he_normal', kernel_regularizer=l2,
+                            kernel_initializer='he_normal', kernel_regularizer=l2(1e-4),
                             use_bias=False)(x)
     x = BatchNormalization()(x)
     x = ReLU()(x)
     x = Conv2D(filters, kernel_size=3, strides=1, padding='same',
-                            kernel_initializer='he_normal', kernel_regularizer=l2,
+                            kernel_initializer='he_normal', kernel_regularizer=l2(1e-4),
                             use_bias=False)(x)
     x = BatchNormalization()(x)
     return x
@@ -714,11 +713,11 @@ def create_residual_shortcut(x, filters, stride):
     x = ReLU()(x)
     x1 = Lambda(lambda y: y[:, 0:-1:stride, 0:-1:stride, :])(x)
     x1 = Conv2D(filters // 2, kernel_size=1, strides=1, padding='valid',
-                             kernel_initializer='he_normal', kernel_regularizer=l2,
+                             kernel_initializer='he_normal', kernel_regularizer=l2(1e-4),
                              use_bias=False)(x1)
     x2 = Lambda(lambda y: y[:, 1::stride, 1::stride, :])(x)
     x2 = Conv2D(filters // 2, kernel_size=1, strides=1, padding='valid',
-                             kernel_initializer='he_normal', kernel_regularizer=l2,
+                             kernel_initializer='he_normal', kernel_regularizer=l2(1e-4),
                              use_bias=False)(x2)
     x = Concatenate()([x1, x2])
     x = BatchNormalization()(x)
@@ -740,12 +739,12 @@ def create_residual_layer(x, filters, blocks, stride):
         x = create_residual_block(x, filters, 1)
     return x
 
-def create_shakeshake_res34(n_classes, n_blocks=[3, 4, 6, 3],input_shape=(32,32,1), activation='softmax'):
+def create_shakeshake_res34(n_classes, n_blocks=[5,5,5],input_shape=(32,32,1), activation='softmax'):
     """ Residual Network with Shake-Shake regularization modeled after ResNet32 """
     # Input and first convolutional layer
     x_in = Input(shape=input_shape)
     x = Conv2D(64, kernel_size=7, strides=2, padding='same',
-                            kernel_initializer='he_normal', kernel_regularizer=l2,
+                            kernel_initializer='he_normal', kernel_regularizer=l2(1e-4),
                             use_bias=False)(x_in)
     x =BatchNormalization()(x)
     x = MaxPooling2D(pool_size=3, strides=2, padding='same')(x)
