@@ -751,7 +751,7 @@ def create_residual_layer(x, filters, blocks, stride):
     return x
 
 
-def create_shakeshake_res34(n_classes=10, n_blocks=[5, 5, 5], input_shape=(32, 32, 1), activation='softmax'):
+def create_shakeshake_res34(n_classes=10, n_blocks=[2, 2, 2, 2], input_shape=(32, 32, 1), activation='softmax'):
     """ Residual Network with Shake-Shake regularization modeled after ResNet32 """
     # Input and first convolutional layer
     x_in = Input(shape=input_shape)
