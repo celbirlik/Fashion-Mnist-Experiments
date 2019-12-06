@@ -3,7 +3,7 @@
 
 
 ## Fashion MNIST
-'''` Fashion-MNIST` is a dataset of [Zalando](https://jobs.zalando.com/tech/)'s article images—consisting of a training set of 60,000 examples and a test set of 10,000 examples. Each example is a 28x28 grayscale image, associated with a label from 10 classes. We intend `Fashion-MNIST` to serve as a direct **drop-in replacement** for the original [MNIST dataset](http://yann.lecun.com/exdb/mnist/) for benchmarking machine learning algorithms. It shares the same image size and structure of training and testing splits. '''
+*` Fashion-MNIST` is a dataset of [Zalando](https://jobs.zalando.com/tech/)'s article images—consisting of a training set of 60,000 examples and a test set of 10,000 examples. Each example is a 28x28 grayscale image, associated with a label from 10 classes. We intend `Fashion-MNIST` to serve as a direct **drop-in replacement** for the original [MNIST dataset](http://yann.lecun.com/exdb/mnist/) for benchmarking machine learning algorithms. It shares the same image size and structure of training and testing splits.*
 
 
 
@@ -63,7 +63,7 @@ ip:8888 after running the containers
 - ![SWA](https://raw.githubusercontent.com/celbirlik/Fashion-Mnist-Experiments/master/Images/swa.png)
 - Augmentation : With minimal amount since computation for searching augmentation parameters was limited.  {'horizontal_flip':0.1,'zoom_range':0.05}
 - Ensembles were not used since variance between model predictions were low.
-- 
+
 
 ## Test Results
 
@@ -98,6 +98,6 @@ As can be seen, visually similar classes like shirt and top gets confused most o
 ![Confusion matrix](https://raw.githubusercontent.com/celbirlik/Fashion-Mnist-Experiments/master/Images/ShakeShake34.png)
 
 
-## Futur Work
+## Future Work
 
 Instead of training a single multi classifier, 10 one vs all classifiers can be trained on each class. An Ensemble of classifiers directly focused on each class may improve accuracy further.
