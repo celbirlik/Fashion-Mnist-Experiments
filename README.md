@@ -70,7 +70,7 @@ From the results we see that deeper models overfit the small images easily, resu
 
 
 |   Model	| Accuracy  	|   	
-|--:	|---	|
+|---:	|---	|
 |  ShakeShake34 	| 95.71  	|   	
 |  WideResnet16-4 	|  95.33 	|
 |   Resnet18	|   94.74	|
