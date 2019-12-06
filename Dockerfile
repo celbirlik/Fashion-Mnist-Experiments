@@ -1,12 +1,10 @@
 FROM tensorflow/tensorflow:latest-gpu-py3-jupyter
 
+LABEL maintainer='celbirlik@gmail.com'
+
 WORKDIR /fashion_mnist
 
 ADD . /fashion_mnist
-
-
-MAINTAINER Can Elbirlik, celbirlik@gmail.com
-
 
 RUN pip install --trusted-host pypi.python.org -r requirements.txt
 
