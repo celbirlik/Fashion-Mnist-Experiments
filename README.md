@@ -65,6 +65,10 @@ If --gpus all flags are disabled, CPU will be used.
 
 Results are with SWA,Cyclic learning rate and minimal Augmentation. Other combinations of these and other parameters such as different epoch numbers have not been tested due to long training times.
 From the results we see that deeper models overfit the small images easily, resulting in worse results. models with strong regularizers(shake_Shake34) and shallower versions(resnet18 vs resnet34) perform better.
+
+
+
+
 |   Model	| Accuracy  	|   	
 |--:	|---	|
 |  ShakeShake34 	| 95.71  	|   	
@@ -90,6 +94,6 @@ As can be seen, visually similar classes like shirt and top gets confused most o
 ![Confusion matrix](https://raw.githubusercontent.com/celbirlik/Fashion-Mnist-Experiments/master/Images/ShakeShake34.png)
 
 
-## Future Work
+## Futur Work
 
 Instead of training a single multi classifier, 10 one vs all classifiers can be trained on each class. An Ensemble of classifiers directly focused on each class may improve accuracy further.
