@@ -91,11 +91,17 @@ From the results we see that deeper models overfit the small images easily, resu
 
 As can be seen, visually similar classes like shirt and top gets confused most often. These classes often times are harder to distinguish with human eyes too.
 
-
 ![PR and F1 Scores of ShakeShake](https://raw.githubusercontent.com/celbirlik/Fashion-Mnist-Experiments/master/Images/pr-f1.png)
-
-
 ![Confusion matrix](/Images/ShakeShake34.png)
+
+Some of the wrongly classified examples are below. 
+
+![Incorrectly classified images](/Images/incorrect.png)
+
+
+
+
+
 
 
 ## Future Work
