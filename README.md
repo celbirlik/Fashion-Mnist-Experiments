@@ -59,6 +59,7 @@ ip:8888 after running the containers
 
 ### Training Methods:
 - Cyclic Learning Rates: For faster convergence
+
 - Stochastic Weight Averaging : For increased test performance.
 - ![SWA](https://raw.githubusercontent.com/celbirlik/Fashion-Mnist-Experiments/master/Images/swa.png)
 - Augmentation : With minimal amount since computation for searching augmentation parameters was limited.  {'horizontal_flip':0.1,'zoom_range':0.05}
@@ -94,7 +95,7 @@ As can be seen, visually similar classes like shirt and top gets confused most o
 ![PR and F1 Scores of ShakeShake](https://raw.githubusercontent.com/celbirlik/Fashion-Mnist-Experiments/master/Images/pr-f1.png)
 
 
-![Confusion matrix](https://raw.githubusercontent.com/celbirlik/Fashion-Mnist-Experiments/master/Images/ShakeShake34.png)
+![Confusion matrix](/Images/ShakeShake34.png)
 
 
 ## Future Work
